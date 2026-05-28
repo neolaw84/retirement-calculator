@@ -1,0 +1,120 @@
+# ── ci-dev.yml ────────────────────────────────────────────────────────────────
+# Gate-keep every pull request targeting the `dev` branch.
+#
+# Rules enforced:
+#   • All unit-tests must pass.
+#   • Coverage must be ≥ 80% when src contains > 1 000 lines of Python,
+#     otherwise ≥ 60%.
+#
+# Versioning note
+# ───────────────
+# This project uses git-tag-based versioning (setuptools-scm).  There is no
+# version field in pyproject.toml and no version-bump commit on feature branches.
+# The version is determined at release time (merge to main) when release.yml
+# reads the PR labels, calculates the next semver, and creates an annotated tag.
+# Feature branches will install with a dev-suffix version (e.g. 1.2.0.dev3+g…),
+# which is normal and expected.
+#
+# Branch protection should require the job named "Tests & Coverage" (the
+# display name of the `test-and-coverage` job below).
+# ──────────────────────────────────────────────────────────────────────────────
+name: CI – PR to dev
+
+on:
+  pull_request:
+    branches:
+      - dev
+    types:
+      - opened
+      - synchronize
+      - reopened
+
+# Cancel an older in-flight run for the same PR when a new push arrives.
+concurrency:
+  group: ci-dev-pr-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+jobs:
+  test-and-coverage:
+    name: Tests & Coverage
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Check out code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0    # full history so setuptools-scm can derive the version
+
+      # ── Verify a reachable tag exists (setuptools-scm requirement) ─────────
+      - name: Verify version tag is reachable
+        run: |
+          if ! git describe --tags --abbrev=0 2>/dev/null; then
+            echo "::error::No reachable git tag found. Create an initial tag: git tag v0.1.0"
+            exit 1
+          fi
+          echo "Tag reachable: $(git describe --tags --abbrev=0)"
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: ">=3.12"
+          cache: "pip"
+
+      - name: Install project + dev dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -e ".[dev]"
+
+      # ── Count Python LOC in src/ ───────────────────────────────────────────
+      - name: Count lines of code in src/
+        id: loc
+        run: |
+          LOC=$(find src -name "*.py" -exec wc -l {} + 2>/dev/null \
+                | tail -1 | awk '{print $1}')
+          LOC=${LOC:-0}
+          echo "loc=${LOC}" >> "$GITHUB_OUTPUT"
+          echo "Lines of Python code in src/: ${LOC}"
+
+      # ── Derive coverage threshold ──────────────────────────────────────────
+      - name: Determine coverage threshold
+        id: threshold
+        run: |
+          if [ "${{ steps.loc.outputs.loc }}" -gt 1000 ]; then
+            echo "threshold=80" >> "$GITHUB_OUTPUT"
+            echo "Threshold: 80% (src LOC > 1 000)"
+          else
+            echo "threshold=60" >> "$GITHUB_OUTPUT"
+            echo "Threshold: 60% (src LOC ≤ 1 000)"
+          fi
+
+      # ── Run pytest with coverage ───────────────────────────────────────────
+      - name: Run tests
+        run: pytest --cov=src --cov-report=xml --cov-report=term-missing
+
+      # ── Enforce threshold ──────────────────────────────────────────────────
+      - name: Check coverage threshold
+        run: |
+          THRESHOLD=${{ steps.threshold.outputs.threshold }}
+          COVERAGE=$(python - <<'EOF'
+          import xml.etree.ElementTree as ET
+          tree = ET.parse("coverage.xml")
+          root = tree.getroot()
+          print(round(float(root.attrib["line-rate"]) * 100))
+          EOF
+          )
+          echo "Coverage : ${COVERAGE}%"
+          echo "Required : ${THRESHOLD}%"
+          if [ "${COVERAGE}" -lt "${THRESHOLD}" ]; then
+            echo "::error::Coverage ${COVERAGE}% is below the required ${THRESHOLD}%."
+            exit 1
+          fi
+          echo "Coverage check passed ✓"
+
+      # ── Upload coverage report as artefact ────────────────────────────────
+      - name: Upload coverage report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: coverage-report
+          path: coverage.xml
+          retention-days: 7

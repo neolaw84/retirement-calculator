@@ -1,0 +1,59 @@
+[build-system]
+requires = ["setuptools>=64", "setuptools-scm>=8", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "retirement-calculator"
+dynamic = ["version"]
+description = "Retirement Calculator for Australian Tax Resident to FIRE"
+readme = "README.md"
+requires-python = ">=3.12"
+license = {text = "Apache-2.0"}
+authors = [
+    {name = "Edward L", email = "neolaw@gmail.com"},
+]
+keywords = []
+classifiers = [
+    "Programming Language :: Python :: 3",
+    "License :: OSI Approved :: Apache Software License",
+    "Operating System :: OS Independent",
+]
+dependencies = []
+
+[project.urls]
+Homepage = "https://github.com/neolaw84/retirement-calculator"
+Documentation = "https://neolaw84.github.io/retirement-calculator/"
+Issues = "https://github.com/neolaw84/retirement-calculator/issues"
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=7.0",
+    "pytest-cov>=4.0",
+]
+docs = [
+    "mkdocs>=1.5",
+    "mkdocs-material>=9.0",
+    "mkdocstrings[python]>=0.24",
+    "pymdown-extensions>=10.0",
+]
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "--cov=src --cov-report=xml --cov-report=term-missing"
+
+[tool.coverage.run]
+source = ["src"]
+omit = ["tests/*"]
+
+[tool.coverage.report]
+show_missing = true
+
+[tool.setuptools_scm]
+# Version is derived from git tags (e.g. v1.2.3).
+# A reachable annotated tag is required; run `git tag v0.1.0` if starting fresh.
+# During development on untagged branches, setuptools-scm produces a PEP 440
+# dev suffix such as 1.2.3.dev4+gabcdef0; this is intentional and expected.
+version_file = "src/retirement-calculator/_version.py"

@@ -1,0 +1,130 @@
+# ── release.yml ───────────────────────────────────────────────────────────────
+# Triggered when a PR from `dev` is **merged** into `main`.
+#
+# Versioning strategy: git-tag-based (setuptools-scm)
+# ────────────────────────────────────────────────────
+# There is NO version field in pyproject.toml.  The version is derived
+# entirely from git tags at build time by setuptools-scm.
+#
+# This workflow:
+#   1. Reads PR labels to determine the bump type (major / minor / patch).
+#   2. Finds the latest semver tag reachable from the current HEAD.
+#   3. Calculates the next version and creates an annotated git tag on main.
+#   4. Builds wheel + sdist — setuptools-scm reads the new tag and produces
+#      a clean version string (e.g. "1.2.0") in the distributions.
+#   5. Creates a GitHub Release and attaches the distribution artefacts.
+#   6. Publishes the package to PyPI via Trusted Publisher (OIDC).
+#
+# Bump type is determined by PR labels (first match wins):
+#   • bump:major  → X+1.0.0
+#   • bump:minor  → X.Y+1.0   (default when no bump label is present)
+#   • bump:patch  → X.Y.Z+1
+#
+# Before using the PyPI publish step, configure a Trusted Publisher in your
+# PyPI project settings:
+#   Owner      : <your GitHub username / org>
+#   Repository : <your repo name>
+#   Workflow   : release.yml
+# ──────────────────────────────────────────────────────────────────────────────
+name: Release – merge to main
+
+on:
+  pull_request:
+    branches:
+      - main
+    types:
+      - closed
+
+jobs:
+  build-and-release:
+    name: Build, release & publish
+    # Only run when the PR was actually merged (not just closed).
+    if: github.event.pull_request.merged == true && github.event.pull_request.head.ref == 'dev'
+    runs-on: ubuntu-latest
+
+    permissions:
+      contents: write   # needed to push the new tag and create GitHub Releases
+      id-token: write   # needed for OIDC / Trusted Publisher on PyPI
+
+    steps:
+      - name: Check out main
+        uses: actions/checkout@v4
+        with:
+          ref: main
+          fetch-depth: 0      # full history so git describe can find tags
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      # ── Determine bump type from PR labels ────────────────────────────────
+      - name: Determine bump type
+        id: bump
+        run: |
+          LABELS='${{ toJson(github.event.pull_request.labels.*.name) }}'
+          if echo "$LABELS" | grep -q '"bump:major"'; then
+            echo "type=major" >> "$GITHUB_OUTPUT"
+          elif echo "$LABELS" | grep -q '"bump:patch"'; then
+            echo "type=patch" >> "$GITHUB_OUTPUT"
+          else
+            echo "type=minor" >> "$GITHUB_OUTPUT"
+          fi
+          echo "Bump type: $(grep type= "$GITHUB_OUTPUT" | cut -d= -f2)"
+
+      # ── Calculate next version from latest tag ────────────────────────────
+      - name: Calculate next version
+        id: version
+        run: |
+          LATEST=$(git describe --tags --abbrev=0 2>/dev/null || echo "v0.0.0")
+          CURRENT="${LATEST#v}"
+          IFS='.' read -r MAJOR MINOR PATCH <<< "$CURRENT"
+          MAJOR=${MAJOR:-0}; MINOR=${MINOR:-0}; PATCH=${PATCH:-0}
+          case "${{ steps.bump.outputs.type }}" in
+            major) MAJOR=$((MAJOR+1)); MINOR=0; PATCH=0 ;;
+            minor) MINOR=$((MINOR+1)); PATCH=0 ;;
+            patch) PATCH=$((PATCH+1)) ;;
+          esac
+          NEW_VERSION="${MAJOR}.${MINOR}.${PATCH}"
+          echo "previous=${CURRENT}" >> "$GITHUB_OUTPUT"
+          echo "new=${NEW_VERSION}"   >> "$GITHUB_OUTPUT"
+          echo "tag=v${NEW_VERSION}"  >> "$GITHUB_OUTPUT"
+          echo "Version: ${CURRENT} → ${NEW_VERSION}"
+
+      # ── Create and push annotated tag ─────────────────────────────────────
+      - name: Create version tag
+        run: |
+          git config user.name  "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git tag -a "${{ steps.version.outputs.tag }}" \
+                  -m "Release ${{ steps.version.outputs.tag }}"
+          git push origin "${{ steps.version.outputs.tag }}"
+
+      # ── Build distributions ────────────────────────────────────────────────
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: ">=3.12"
+          cache: "pip"
+
+      - name: Install build tools
+        run: |
+          python -m pip install --upgrade pip
+          pip install build
+
+      - name: Build wheel and sdist
+        run: python -m build
+
+      - name: List built artefacts
+        run: ls -lh dist/
+
+      # ── Create GitHub Release ──────────────────────────────────────────────
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ steps.version.outputs.tag }}
+          name: ${{ steps.version.outputs.tag }}
+          generate_release_notes: true
+          files: dist/*
+
+      # ── Publish to PyPI (Trusted Publisher / OIDC) ────────────────────────
+      - name: Publish to PyPI
+        uses: pypa/gh-action-pypi-publish@release/v1
+        with:
+          verbose: true
