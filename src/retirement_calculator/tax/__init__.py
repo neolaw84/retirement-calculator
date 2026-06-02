@@ -32,13 +32,6 @@ MEDICARE_LEVY_RATE = 0.02
 DIV293_THRESHOLD = 250_000
 DIV293_RATE = 0.15
 
-# Low Income Tax Offset (LITO) – 2025-26
-_LITO_MAX = 700.0
-_LITO_PHASE1_START = 37_500
-_LITO_PHASE1_RATE = 0.05   # 5c per $1 from $37,500 to $45,000
-_LITO_PHASE2_START = 45_001
-_LITO_PHASE2_RATE = 0.015   # 1.5c per $1 from $45,001 to $66,667
-
 # Trust minimum non-refundable credit rate (May 2026 budget)
 TRUST_MIN_CREDIT_RATE = 0.30
 
@@ -49,20 +42,6 @@ def _gross_income_tax(taxable_income: float) -> float:
         if taxable_income > lower:
             return base + (taxable_income - lower) * rate
     return 0.0
-
-
-def _lito(taxable_income: float) -> float:
-    """Low Income Tax Offset (non-refundable)."""
-    if taxable_income <= _LITO_PHASE1_START:
-        return _LITO_MAX
-    elif taxable_income <= 45_000:
-        reduction = (taxable_income - _LITO_PHASE1_START) * _LITO_PHASE1_RATE
-        return max(0.0, _LITO_MAX - reduction)
-    else:
-        # Phase 1 already fully phased out, apply phase 2
-        phase1_reduction = (45_000 - _LITO_PHASE1_START) * _LITO_PHASE1_RATE
-        phase2_reduction = (taxable_income - 45_000) * _LITO_PHASE2_RATE
-        return max(0.0, _LITO_MAX - phase1_reduction - phase2_reduction)
 
 
 def income_tax(
@@ -85,13 +64,12 @@ def income_tax(
         Net tax payable (after offsets and trust credits), floored at 0.
     """
     gross = _gross_income_tax(taxable_income)
-    lito_offset = _lito(taxable_income)
     medicare = taxable_income * MEDICARE_LEVY_RATE
 
     # Trust credit is non-refundable (capped at gross tax before Medicare)
     trust_credit = min(trust_distribution * TRUST_MIN_CREDIT_RATE, gross)
 
-    net_tax = max(0.0, gross - lito_offset - trust_credit) + medicare
+    net_tax = max(0.0, gross - trust_credit) + medicare
     return net_tax
 
 

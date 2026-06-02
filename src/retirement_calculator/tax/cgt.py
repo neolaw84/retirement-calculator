@@ -12,7 +12,7 @@ See docs/assumptions.md for full list of assumptions.
 
 from __future__ import annotations
 
-from retirement_calculator.models import Parcel
+from retirement_calculator.models import Parcel, REAssetConfig
 from retirement_calculator.tax import marginal_rate, income_tax
 
 
@@ -118,3 +118,55 @@ def cgt_on_parcel(
         nominal_gain = max(0.0, proceeds - cost_base_scaled)
         cgt_payable = income_tax(total_taxable_income_before_cgt + nominal_gain) - income_tax(total_taxable_income_before_cgt)
         return nominal_gain, cgt_payable
+
+
+def re_cgt_on_sale(
+    re_asset: REAssetConfig,
+    sale_year: int,
+    sale_value: float,
+    cpi: dict[int, float],
+    cpi_at_sale: float,
+    base_taxable_income: float,
+) -> tuple[float, float]:
+    """Compute CGT on the sale of a real estate asset.
+
+    Parameters
+    ----------
+    re_asset : REAssetConfig
+        The RE asset being sold.
+    sale_year : int
+        Calendar year of the sale.
+    sale_value : float
+        Current nominal market value of the property.
+    cpi : dict[int, float]
+        Full CPI series (year → index value).
+    cpi_at_sale : float
+        CPI index at time of sale (convenience; equals cpi[sale_year]).
+    base_taxable_income : float
+        Taxpayer's taxable income before adding this CGT gain.
+
+    Returns
+    -------
+    (assessable_gain, cgt_payable) : tuple[float, float]
+    """
+    if sale_year >= INDEXATION_START_YEAR:
+        if re_asset.year_bought < INDEXATION_START_YEAR:
+            cost_base = re_asset.valuation_at_base_date
+            cpi_at_acq = cpi[INDEXATION_START_YEAR]
+        else:
+            cost_base = re_asset.purchase_price
+            cpi_at_acq = cpi.get(re_asset.year_bought, cpi_at_sale)
+
+        indexed_cost_base = cost_base * (cpi_at_sale / cpi_at_acq)
+        real_gain_post_2027 = max(0.0, sale_value - indexed_cost_base)
+        assessable_gain = real_gain_post_2027 + re_asset.discounted_gain_at_2027
+
+        income_with_gain = base_taxable_income + assessable_gain
+        effective_rate = max(marginal_rate(income_with_gain), MIN_CGT_RATE)
+        cgt_payable = assessable_gain * effective_rate
+    else:
+        nominal_gain = max(0.0, sale_value - re_asset.purchase_price)
+        assessable_gain = nominal_gain * 0.5
+        cgt_payable = assessable_gain * marginal_rate(base_taxable_income + assessable_gain)
+
+    return assessable_gain, cgt_payable

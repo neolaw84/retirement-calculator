@@ -18,7 +18,10 @@ classifiers = [
     "License :: OSI Approved :: Apache Software License",
     "Operating System :: OS Independent",
 ]
-dependencies = []
+dependencies = [
+    "numpy>=1.26",
+    "pandas>=2.0",
+]
 
 [project.urls]
 Homepage = "https://github.com/neolaw84/retirement-calculator"

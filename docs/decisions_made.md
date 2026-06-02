@@ -130,13 +130,16 @@ Each entry records: the decision, the rationale, and (where applicable) what was
 - `year_bought == 2026` or `2027`: ring-fenced from simulation year `2028` onwards (can negatively gear in the year of purchase)
 - `year_bought >= 2028`: ring-fenced from day 1 of ownership
 
-**Current code state**: `NEG_GEARING_CUTOFF_YEAR = 2026` applies ring-fencing from the year of purchase for `year_bought >= 2026`. This is a minor inaccuracy for `year_bought == 2026` or `2027` (overly conservative by one year). A known issue to address in refactoring.
+**Current code state**: **FIXED in refactoring (2026-06-02)**. `simulation/_phases.py` now uses the correct two-date categorisation logic in `_process_re_income()` and `_compute_re_assessable()`:
+- `is_new = (year_bought >= 2028) or (year_bought in (2026, 2027) and year >= 2028)`
+- Ring-fence assessment only activates from year 2028 (`if year >= 2028:`).
 
 **Rejected**: Modelling new builds as a separate RE asset type — too much data complexity for the current use case.
 
 ### D16 – RE expenses are 1% of property value per year (not 10% of gross rent)
 **Decision**: `re_expenses = current_re_value * 0.01`.  
-**Rationale**: The simulator uses a value-based expense model. This approximates ongoing maintenance and management. Note: `docs/assumptions.md` item 19 references a different calculation (gross rent − 5% mgmt − 5% maintenance). The implementation uses a 1% value-based model. This is a known discrepancy to resolve in refactoring.
+**Rationale**: The simulator uses a value-based expense model. This approximates ongoing maintenance and management.  
+**Status**: **FIXED in refactoring (2026-06-02)**. `docs/assumptions.md` item 23 now correctly documents the `1% of current property value` model, replacing the earlier incorrect "10% of gross rent" description.
 
 ### D17 – Mortgage amortised over 30 years from purchase date
 **Decision**: Annual mortgage payment uses the standard annuity formula with the sampled loan interest rate. Remaining term = `max(0, 30 - years_elapsed)`.  
@@ -180,10 +183,9 @@ Each entry records: the decision, the rationale, and (where applicable) what was
 **Decision**: Age Pension entitlements are not calculated or included in income.  
 **Rationale**: Age Pension is means-tested, assets-tested, and complex. The target user is pursuing FIRE and may not be eligible, or may prefer to exclude it for conservative planning.
 
-### D25 – `simulate()` is a monolithic function (known exception to size rule)
-**Decision**: The `simulate()` function in `simulation/__init__.py` is ~1,100+ lines — far exceeding the 200–300 line file guideline.  
-**Rationale**: The per-year loop has tightly coupled state (parcels, balances, CPI, prices) that is genuinely difficult to split without either passing large state dictionaries everywhere or introducing a god-class. The function is an algorithm, not a class, and its linear structure makes it readable.  
-**Planned refactoring target**: Extract logical year-step phases into private helper functions (e.g. `_step_nre_growth()`, `_step_re_income()`, `_step_iterative_drawdown()`) that each take well-defined inputs and return updated state. This preserves the single-function algorithm structure while reducing line count.
+### D25 – `simulate()` orchestrator; `_drawdown.py` is a size exception
+**Decision**: After refactoring (2026-06-02), `simulation/__init__.py` is a thin orchestrator (~120 lines). The per-year phase logic lives in `_phases.py` (~250 lines) and `_config.py` (~120 lines). The drawdown solver lives in `_drawdown.py` (~400 lines) — this is an intentional exception to the 300-line file guideline.  
+**Rationale**: The four drawdown modes (waterfall, blended, rebalanced, greedy) plus the iterative solver and draw helpers are intrinsically interconnected; splitting them across multiple files would require passing `_DrawState` across module boundaries and would lose clarity. `_drawdown.py` is a single cohesive algorithm.
 
 ### D26 – Drawdown state is accumulated across iterations (not reset)
 **Decision**: `nre_drawdown_final`, `nre_cgt_total`, etc. are accumulated across the 5 solver iterations — they are not reset on each pass.  

@@ -10,23 +10,19 @@ def test_marginal_rate():
     assert marginal_rate(150000) == 0.37
     assert marginal_rate(200000) == 0.45
 
-def test_income_tax_lito_2026():
-    # $30,000 income:
-    # Tax = (30000 - 18200.0) * 0.16 = 1888.0
-    # LITO = 700 (income < 37500)
+def test_income_tax_no_lito_30k():
+    # $30,000 income (LITO permanently not modelled per D03):
+    # Tax = (30000 - 18201) * 0.16 = 1887.84
     # Medicare = 30000 * 0.02 = 600
-    # Net tax = 1888 - 700 + 600 = 1788
-    # NOTE: Code uses 18201 as bracket start. (30000 - 18201) * 0.16 = 1887.84
-    assert pytest.approx(income_tax(30000), 0.01) == 1787.84
+    # Net tax = 1887.84 + 600 = 2487.84
+    assert pytest.approx(income_tax(30000), 0.01) == 2487.84
 
-def test_income_tax_lito_phaseout():
-    # $40,000 income:
+def test_income_tax_no_lito_40k():
+    # $40,000 income (LITO permanently not modelled per D03):
     # Tax = (40000 - 18201) * 0.16 = 3487.84
-    # LITO Reduction = (40000 - 37500) * 0.05 = 2500 * 0.05 = 125
-    # LITO = 700 - 125 = 575
     # Medicare = 40000 * 0.02 = 800
-    # Net tax = 3487.84 - 575 + 800 = 3712.84
-    assert pytest.approx(income_tax(40000), 0.01) == 3712.84
+    # Net tax = 3487.84 + 800 = 4287.84
+    assert pytest.approx(income_tax(40000), 0.01) == 4287.84
 
 def test_div293_tax():
     # salary 200k, super 30k -> 230k < 250k: 0

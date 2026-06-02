@@ -17,16 +17,25 @@ retirement-calculator/
 │       ├── tax/
 │       │   ├── __init__.py             ← tax calculations: income_tax(), marginal_rate(),
 │       │   │                              division_293_tax(), super_fund_tax()
-│       │   │                              Tax brackets (2025-26), LITO, Medicare, Div293, Trust credit
-│       │   └── cgt.py                  ← CGT calculations: cgt_on_parcel()
+│       │   │                              Tax brackets (2025-26), Medicare, Div293, Trust credit
+│       │   │                              Note: LITO removed per D03
+│       │   └── cgt.py                  ← CGT calculations: cgt_on_parcel(), re_cgt_on_sale()
 │       │                                  Pre-2027 (50% discount) and post-2027 (CPI indexed, 30% floor)
 │       ├── strategies/
 │       │   └── __init__.py             ← DrawdownStrategy (Protocol), LIFOStrategy, FIFOStrategy,
 │       │                                  TaxOptimisedGreedyStrategy, RebalancingStrategy
 │       │                                  DrawdownOrchestrator (stub — not yet used by simulate())
 │       └── simulation/
-│           └── __init__.py             ← CalculatorConfig (dataclass), simulate() function
-│                                          Main simulation loop (~1100 lines, see decisions_made D25)
+│           ├── __init__.py             ← thin simulate() orchestrator (~120 lines); re-exports
+│           │                              CalculatorConfig for backward compatibility
+│           ├── _config.py              ← CalculatorConfig dataclass + 3 helpers:
+│           │                              _build_cpi_series, _concessional_cap,
+│           │                              _pension_min_drawdown_rate
+│           ├── _phases.py              ← 15 per-year income/liquidation phase functions,
+│           │                              NamedTuple return types; includes D15 NEG_GEARING fix
+│           └── _drawdown.py            ← _DrawState dataclass, iterative solver,
+│                                          4 drawdown mode helpers (_run_waterfall, _run_blended,
+│                                          _run_rebalanced, _run_greedy); ~400 lines (D25 exception)
 │
 ├── tests/
 │   ├── __init__.py

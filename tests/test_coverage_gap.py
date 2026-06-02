@@ -216,9 +216,10 @@ def test_real_estate_ring_fencing_budget_2026():
         loan_interest_rate=ConstantRate(0.10) # 40k interest
     )
     df = simulate(config)
-    # Loss of 30k (10k rent - 40k interest) should be ring-fenced.
-    # Taxable income should be just salary (200k), not (200k - 30k).
-    row = df.iloc[0]
+    # Per D15: year_bought=2027 → ring-fenced from simulation year 2028 onwards.
+    # In year 2027 (iloc[0]) the loss is still deductible against salary.
+    # In year 2028 (iloc[1]) the loss is ring-fenced — taxable = just salary (200k).
+    row = df.iloc[1]
     assert row["total_taxable_income_nominal"] >= 200000
 
 def test_tax_optimised_multi_parcel():

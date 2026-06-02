@@ -83,7 +83,7 @@ This document records all assumptions made in implementing the Retirement Calcul
 
 ## RE Asset Assumptions
 
-23. **Rental Income Net Yield**: Gross rental income minus 5% property management fee minus 5% maintenance = net rent. Modelled as user-provided gross rent with a 10% deduction applied. **Note**: The current code uses `current_re_value * 0.01` (1% of property value) rather than this formula — known discrepancy, see D16.
+23. **Rental Expenses**: Modelled as `1% of current property value per year` (`current_re_value * 0.01`). This approximates ongoing maintenance and management costs. Note: an earlier draft described a "10% of gross rent" formula — the implementation uses the value-based model (see D16).
 
 24. **RE Valuation Base Date**: July 1, 2027 is the reference date for RE valuations (as specified). CPI indexation is used to determine cost base at time of sale.
 
