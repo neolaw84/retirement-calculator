@@ -183,17 +183,20 @@ Each entry records: the decision, the rationale, and (where applicable) what was
 **Decision**: Age Pension entitlements are not calculated or included in income.  
 **Rationale**: Age Pension is means-tested, assets-tested, and complex. The target user is pursuing FIRE and may not be eligible, or may prefer to exclude it for conservative planning.
 
-### D25 – `simulate()` orchestrator; `_drawdown.py` is a size exception
-**Decision**: After refactoring (2026-06-02), `simulation/__init__.py` is a thin orchestrator (~120 lines). The per-year phase logic lives in `_phases.py` (~250 lines) and `_config.py` (~120 lines). The drawdown solver lives in `_drawdown.py` (~400 lines) — this is an intentional exception to the 300-line file guideline.  
-**Rationale**: The four drawdown modes (waterfall, blended, rebalanced, greedy) plus the iterative solver and draw helpers are intrinsically interconnected; splitting them across multiple files would require passing `_DrawState` across module boundaries and would lose clarity. `_drawdown.py` is a single cohesive algorithm.
+### D25 – Deliberate size exceptions after simulation refactor (2026-06-02)
+**Decision**: Three items are documented exceptions to the ≤60-line function / ≤300-line file guardrails:
+
+1. **`simulate()` in `simulation/__init__.py` (~226 lines)**: An inherent orchestrator that calls 20+ extracted phase functions per year-loop iteration. Each call requires threading 5–15 parameters. Breaking it further would require a complex mutable state object, which is worse design. The file itself is ~269 lines (within the file limit).
+
+2. **`_build_year_record()` in `simulation/_year_record.py` (~110 lines)**: Pure data assembly of 64 key-value output columns. There is no conditional logic or loops — the length represents breadth of output, not complexity. The 40+ parameter signature is unavoidable given the 64 output columns.
+
+3. **`cgt_on_parcel()` in `tax/cgt.py` (~62 lines)**: The function body is ~33 lines; the remainder is a multi-scenario docstring (29 lines). The code itself is within the spirit of the 60-line limit.
+
+**Rationale**: All other previously allowlisted exceptions (`_drawdown.py`, `_phases.py`, `DrawdownOrchestrator`) have been resolved by the refactor. These three represent unavoidable coupling between data breadth (output columns) and code length.
 
 ### D26 – Drawdown state is accumulated across iterations (not reset)
 **Decision**: `nre_drawdown_final`, `nre_cgt_total`, etc. are accumulated across the 5 solver iterations — they are not reset on each pass.  
 **Rationale**: Each iteration sells additional parcels to fill a remaining gap; the total is the sum of all iterations. This is correct behaviour.
-
-### D27 – `DrawdownOrchestrator` is a stub
-**Decision**: `DrawdownOrchestrator` in `strategies/__init__.py` exists but its `calculate_drawdown()` method returns `None`.  
-**Rationale**: The orchestration logic currently lives inside `simulate()`. The stub is a placeholder for a future refactoring that will extract this responsibility.
 
 ---
 

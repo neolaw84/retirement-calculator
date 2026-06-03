@@ -59,15 +59,20 @@ A year-by-year retirement simulation library for **Australian tax residents** pu
 
 ---
 
-## Known Gaps (Not Yet Implemented)
+## Intentional Exclusions (Counted as Fulfilled)
 
-These are intentional omissions documented in `docs/decisions_made.md`:
+These are deliberate non-modelled items documented in `docs/decisions_made.md` and treated as fulfilled for this project:
 
 | Item | Decision ref |
 |---|---|
 | Income tax rate changes: 15% (2026), 14% (2027) | D03 |
 | Working Australians Tax Offset (WATO, $250 from 2027-28) | D04 |
 | $1,000 instant work-related expense deduction (from 2026-27) | D05 |
+
+## Remaining Not Yet Implemented Items
+
+| Item | Decision ref |
+|---|---|
 | Franking credits on ETF distributions | D21 |
 | Age Pension | D24 |
 | Depreciation on real estate | D18 |

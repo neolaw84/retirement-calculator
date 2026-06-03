@@ -18,30 +18,44 @@ retirement-calculator/
 │       │   ├── __init__.py             ← tax calculations: income_tax(), marginal_rate(),
 │       │   │                              division_293_tax(), super_fund_tax()
 │       │   │                              Tax brackets (2025-26), Medicare, Div293, Trust credit
-│       │   │                              Note: LITO removed per D03
 │       │   └── cgt.py                  ← CGT calculations: cgt_on_parcel(), re_cgt_on_sale()
 │       │                                  Pre-2027 (50% discount) and post-2027 (CPI indexed, 30% floor)
 │       ├── strategies/
 │       │   └── __init__.py             ← DrawdownStrategy (Protocol), LIFOStrategy, FIFOStrategy,
 │       │                                  TaxOptimisedGreedyStrategy, RebalancingStrategy
-│       │                                  DrawdownOrchestrator (stub — not yet used by simulate())
 │       └── simulation/
-│           ├── __init__.py             ← thin simulate() orchestrator (~120 lines); re-exports
-│           │                              CalculatorConfig for backward compatibility
+│           ├── __init__.py             ← simulate() orchestrator (~226 lines, D25 exception);
+│           │                              re-exports CalculatorConfig for backward compatibility
 │           ├── _config.py              ← CalculatorConfig dataclass + 3 helpers:
 │           │                              _build_cpi_series, _concessional_cap,
 │           │                              _pension_min_drawdown_rate
-│           ├── _phases.py              ← 15 per-year income/liquidation phase functions,
-│           │                              NamedTuple return types; includes D15 NEG_GEARING fix
-│           └── _drawdown.py            ← _DrawState dataclass, iterative solver,
-│                                          4 drawdown mode helpers (_run_waterfall, _run_blended,
-│                                          _run_rebalanced, _run_greedy); ~400 lines (D25 exception)
+│           ├── _phase_types.py         ← 7 NamedTuple return types for phase functions
+│           ├── _phases.py              ← thin re-export shim (backward compat); imports from
+│           │                              _phases_income.py and _phases_capital.py
+│           ├── _phases_income.py       ← income/growth phase functions (D15 NEG_GEARING fix):
+│           │                              _apply_cash_interest, _compute_salary,
+│           │                              _compute_super_contributions, _grow_nre,
+│           │                              _process_trust_income, _process_re_income,
+│           │                              _compute_re_assessable
+│           ├── _phases_capital.py      ← capital event phase functions:
+│           │                              _apply_cgt_stepup_2027, _handle_trust_dissolution,
+│           │                              _handle_re_sales, _compute_re_mortgages,
+│           │                              _apply_nre_contributions, _grow_super, _reinvest_surplus
+│           ├── _year_record.py         ← _build_year_record(): assembles the 64-column output dict
+│           │                              per simulation year (~110 lines, D25 exception)
+│           ├── _drawdown.py            ← _DrawState dataclass, per-source draw helpers
+│           │                              (_draw_super, _draw_nre, _draw_trust), and 4 drawdown
+│           │                              mode functions (_run_waterfall, _run_blended,
+│           │                              _run_rebalanced, _run_greedy)
+│           └── _solver.py              ← run_iterative_solver, _compute_iteration_tax,
+│                                          _apply_super_transition, _apply_mandatory_super_draw,
+│                                          _run_one_iteration
 │
 ├── tests/
 │   ├── __init__.py
 │   ├── test_sample.py                  ← basic package import / version test
 │   ├── test_rates.py                   ← unit tests for ConstantRate, NormalRate, HistoricalRate
-│   ├── test_tax.py                     ← unit tests for income_tax, LITO, Div293, super_fund_tax, CGT
+│   ├── test_tax.py                     ← unit tests for income_tax, Medicare, Div293, super_fund_tax, CGT
 │   ├── test_strategies.py              ← unit tests for FIFO, LIFO, TaxOptimised, Rebalancing strategies
 │   ├── test_simulation.py              ← integration tests for full simulate() runs (ring-fencing, trust credit)
 │   ├── test_simulation_smoke.py        ← smoke tests: simulate() runs without error under various configs
@@ -99,10 +113,10 @@ retirement-calculator/
 | Understand overall design | `docs/architecture.md` |
 | Add / fix a tax rule | `src/retirement_calculator/tax/__init__.py` or `tax/cgt.py` |
 | Add / fix a drawdown strategy | `src/retirement_calculator/strategies/__init__.py` |
-| Add / fix simulation logic | `src/retirement_calculator/simulation/__init__.py` |
-| Add a new input parameter | `src/retirement_calculator/models/__init__.py` → then update `CalculatorConfig` in `simulation/__init__.py` |
+| Add / fix simulation logic | `src/retirement_calculator/simulation/__init__.py` (orchestrator) → then the relevant `_phases_income.py`, `_phases_capital.py`, `_solver.py`, or `_drawdown.py` |
+| Add a new input parameter | `src/retirement_calculator/models/__init__.py` → then update `CalculatorConfig` in `simulation/_config.py` |
 | Add a new rate function | `src/retirement_calculator/rates/__init__.py` |
 | Write tests | `tests/` — pick the most relevant test file or create a new one |
 | Check modelling assumptions | `docs/assumptions.md` |
 | Check a design decision | `docs/decisions_made.md` |
-| Understand the output columns | `src/retirement_calculator/simulation/__init__.py` (the `records.append({...})` block near the end) |
+| Understand the output columns | `src/retirement_calculator/simulation/_year_record.py` (`_build_year_record` dict) |

@@ -88,3 +88,10 @@ This codebase is maintained by AI coding agents. The docs in this `docs/` direct
 ## 9. Test Coverage
 
 The minimum accepted test coverage is **80%** (enforced by `--cov-fail-under=80` in pytest config). Aim for coverage of all conditional branches, not just line coverage. Integration-style simulation tests (full `simulate()` runs) are valued alongside unit tests of individual functions.
+
+---
+
+## 10. Guardrails in Tooling
+
+- PRs use `.github/pull_request_template.md` to enforce Spec + TDD + SOLID review discipline.
+- CI runs `scripts/check_size_guardrails.py` to prevent new unapproved size exceptions and growth of existing exceptions.

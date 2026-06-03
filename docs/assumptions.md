@@ -89,7 +89,7 @@ This document records all assumptions made in implementing the Retirement Calcul
 
 25. **Depreciation**: Not modelled (simplification).
 
-26. **Mortgage Interest**: Not modelled (simplification — user provides net rent; leverage effects outside scope).
+26. **Mortgage Interest**: Modelled via the mortgage amortisation logic in `simulation/_phases.py`. The simulator derives annual interest from the remaining loan balance and sampled loan rate; leverage effects are therefore in scope.
 
 ## Inflation and Rate Assumptions
 

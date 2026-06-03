@@ -17,72 +17,47 @@ import numpy as np
 import pandas as pd
 
 from retirement_calculator.models import (
-    NREAssetConfig,
-    REAssetConfig,
-    TrustAssetConfig,
-    Parcel,
-    AssetAllocation,
-    DrawdownPolicy,
+    NREAssetConfig, REAssetConfig, TrustAssetConfig,
+    Parcel, AssetAllocation, DrawdownPolicy,
 )
-from retirement_calculator.rates import RateFunction, ConstantRate
 from retirement_calculator.tax.cgt import INDEXATION_START_YEAR
 from retirement_calculator.strategies import (
-    LIFOStrategy,
-    FIFOStrategy,
-    TaxOptimisedGreedyStrategy,
-    RebalancingStrategy,
+    LIFOStrategy, FIFOStrategy, TaxOptimisedGreedyStrategy, RebalancingStrategy,
 )
 
-# Re-export CalculatorConfig from _config for backward compatibility
 from retirement_calculator.simulation._config import (
-    CalculatorConfig,
-    _build_cpi_series,
-    _concessional_cap,
-    _pension_min_drawdown_rate,
+    CalculatorConfig, _build_cpi_series, _concessional_cap, _pension_min_drawdown_rate,
 )
-
 from retirement_calculator.simulation._phases import (
-    _apply_cgt_stepup_2027,
-    _apply_cash_interest,
-    _compute_salary,
-    _compute_super_contributions,
-    _grow_nre,
-    _process_trust_income,
-    _process_re_income,
-    _compute_re_assessable,
-    _handle_trust_dissolution,
-    _handle_re_sales,
-    _compute_re_mortgages,
-    _apply_nre_contributions,
-    _grow_super,
-    _reinvest_surplus,
+    _apply_cgt_stepup_2027, _apply_cash_interest, _compute_salary,
+    _compute_super_contributions, _grow_nre, _process_trust_income,
+    _process_re_income, _compute_re_assessable, _handle_trust_dissolution,
+    _handle_re_sales, _compute_re_mortgages, _apply_nre_contributions,
+    _grow_super, _reinvest_surplus,
 )
-
-from retirement_calculator.simulation._drawdown import (
-    _apply_super_transition,
-    _apply_mandatory_super_draw,
-    run_iterative_solver,
+from retirement_calculator.simulation._solver import (
+    _apply_super_transition, _apply_mandatory_super_draw, run_iterative_solver,
 )
+from retirement_calculator.simulation._year_record import _build_year_record
 
 
 def simulate(config: CalculatorConfig) -> pd.DataFrame:
     """Run the retirement simulation and return a results DataFrame.
 
-    Returns
-    -------
-    pd.DataFrame
-        One row per year. Columns include income, expenses, tax, and asset values –
-        all in both nominal and real (base-year) dollars.
+    Returns one row per year with nominal and real values for all tracked quantities.
+
+    Note (D25): this orchestrator calls 20 extracted phase functions and threads
+    their results together. Its length (~150 lines) is a deliberate documented
+    exception — splitting it further would require a complex state object with
+    no gain in readability.
     """
     rng = np.random.default_rng(config.seed)
     end_year = config.current_year + (99 - config.current_age)
     cpi = _build_cpi_series(config.current_year, end_year, config.inflation_rate, rng)
 
     _strategies = {
-        "fifo": FIFOStrategy(),
-        "lifo": LIFOStrategy(),
-        "tax_optimised": TaxOptimisedGreedyStrategy(),
-        "rebalancing": RebalancingStrategy(),
+        "fifo": FIFOStrategy(), "lifo": LIFOStrategy(),
+        "tax_optimised": TaxOptimisedGreedyStrategy(), "rebalancing": RebalancingStrategy(),
     }
     strategy = _strategies.get(config.drawdown_strategy, FIFOStrategy())
 
@@ -99,31 +74,26 @@ def simulate(config: CalculatorConfig) -> pd.DataFrame:
         if bv > 0:
             nre_parcels.append(Parcel("bond", config.current_year, bv, base_cpi, bv))
 
-    # --- Initialise RE state ---
-    re_values: dict[int, float] = {}
-    for re in config.re_assets:
-        years_to_base = max(0, 2027 - config.current_year)
-        re_values[re.property_id] = re.valuation_at_base_date / (
-            (1.0 + re.growth_rate.sample(rng)) ** years_to_base
+    # --- Initialise RE and trust state ---
+    re_values: dict[int, float] = {
+        re.property_id: re.valuation_at_base_date / (
+            (1.0 + re.growth_rate.sample(rng)) ** max(0, 2027 - config.current_year)
         )
+        for re in config.re_assets
+    }
     re_mortgage_balance: dict[int, float] = {
         re.property_id: float(re.loan_balance) for re in config.re_assets
     }
-
-    # --- Initialise trust state ---
     trust_parcels: list[Parcel] = []
     trust_price = 1.0
     if config.trust_assets is not None:
         val = config.trust_assets.initial_value
-        trust_parcels.append(Parcel(
-            "stock", config.current_year, val, cpi[config.current_year], val
-        ))
+        trust_parcels.append(Parcel("stock", config.current_year, val, cpi[config.current_year], val))
 
-    # --- Initialise super state ---
+    # --- Initialise super / cash state ---
     super_acc = config.initial_super_balance
     super_pen = 0.0
     unused_concessional: list[float] = []
-
     records = []
     salary_real = config.salary
     cash_balance = 0.0
@@ -148,7 +118,7 @@ def simulate(config: CalculatorConfig) -> pd.DataFrame:
         # 4. Super contributions
         total_concessional, unused_concessional = _compute_super_contributions(
             is_retired, salary_nominal, year, super_acc, super_pen,
-            config, unused_concessional, cpi_now
+            config, unused_concessional, cpi_now,
         )
 
         # 5. NRE growth and distributions
@@ -157,17 +127,17 @@ def simulate(config: CalculatorConfig) -> pd.DataFrame:
 
         # 6. Trust growth, distribution, contribution
         trust_result, trust_price = _process_trust_income(
-            year, is_retired, config, trust_parcels, trust_price, cpi_now, rng
+            year, is_retired, config, trust_parcels, trust_price, cpi_now, rng,
         )
         available_cash += trust_result.cash_added
 
         # 7. RE income (growth + rent)
         re_result = _process_re_income(
-            year, config, config.re_assets, re_values, re_mortgage_balance, rng, cpi_now
+            year, config, config.re_assets, re_values, re_mortgage_balance, rng, cpi_now,
         )
         available_cash += re_result.cash_from_rent
 
-        # 8. RE ring-fence assessable income (D15)
+        # 8. RE assessable income (D15 ring-fence)
         re_assessable = _compute_re_assessable(year, re_result.net_rent_legacy, re_result.net_rent_new)
 
         # 9. Base taxable income (pre-CGT)
@@ -180,7 +150,7 @@ def simulate(config: CalculatorConfig) -> pd.DataFrame:
 
         # 10. Trust dissolution
         trust_diss = _handle_trust_dissolution(
-            year, config, trust_parcels, trust_price, cpi_now, base_taxable_income
+            year, config, trust_parcels, trust_price, cpi_now, base_taxable_income,
         )
         if config.trust_assets is not None and config.trust_assets.dissolution_year == year:
             available_cash += trust_diss.cash_added
@@ -188,21 +158,18 @@ def simulate(config: CalculatorConfig) -> pd.DataFrame:
 
         # 11. RE sales
         re_sales = _handle_re_sales(
-            year, config, re_values, re_mortgage_balance, cpi, cpi_now, base_taxable_income
+            year, config, re_values, re_mortgage_balance, cpi, cpi_now, base_taxable_income,
         )
         available_cash += re_sales.sale_proceeds
 
         # 12. RE mortgage payments
         mortgage = _compute_re_mortgages(
-            year, config, config.re_assets, re_mortgage_balance,
-            re_result.re_rate_by_prop, rng
+            year, config, config.re_assets, re_mortgage_balance, re_result.re_rate_by_prop, rng,
         )
         available_cash -= mortgage.contribution_nominal
 
         # 13. NRE contributions
-        nre_contrib = _apply_nre_contributions(
-            config, year, is_retired, nre_parcels, nre_price, cpi_now
-        )
+        nre_contrib = _apply_nre_contributions(config, year, is_retired, nre_parcels, nre_price, cpi_now)
         available_cash -= nre_contrib
 
         # 14. Super pension phase transition
@@ -213,11 +180,11 @@ def simulate(config: CalculatorConfig) -> pd.DataFrame:
         available_cash += super_min_draw
 
         # 16. Iterative drawdown solver
+        expenses_nominal = (
+            (config.retirement_expenses if is_retired else config.expenses) * (cpi_now / 100.0)
+        )
         draw_state, actual_tax, personal_tax, div293, total_taxable = run_iterative_solver(
-            config=config,
-            year=year,
-            age=age,
-            cpi_now=cpi_now,
+            config=config, year=year, age=age, cpi_now=cpi_now,
             base_taxable_income=base_taxable_income,
             trust_distribution_income=trust_result.distribution_income,
             nre_capital_gain_dist=nre_result.nre_capital_gain_dist,
@@ -226,31 +193,18 @@ def simulate(config: CalculatorConfig) -> pd.DataFrame:
             re_cgt_events=re_sales.re_cgt_events,
             trust_dissolution_gain=trust_diss.dissolution_gain,
             trust_dissolution_tax=trust_diss.dissolution_tax,
-            expenses_nominal=(
-                (config.retirement_expenses if is_retired else config.expenses)
-                * (cpi_now / 100.0)
-            ),
+            expenses_nominal=expenses_nominal,
             available_cash_pre_draw=available_cash,
-            super_acc_balance=super_acc,
-            super_pen_balance=super_pen,
-            nre_parcels=nre_parcels,
-            trust_parcels=trust_parcels,
-            nre_price=nre_price,
-            trust_price=trust_price,
-            strategy=strategy,
+            super_acc_balance=super_acc, super_pen_balance=super_pen,
+            nre_parcels=nre_parcels, trust_parcels=trust_parcels,
+            nre_price=nre_price, trust_price=trust_price, strategy=strategy,
         )
 
-        # Extract updated state from solver
         nre_parcels = draw_state.nre_parcels
         trust_parcels = draw_state.trust_parcels
         super_acc = draw_state.super_accumulation_balance
         super_pen = draw_state.super_pension_balance
         available_cash = draw_state.available_cash
-
-        expenses_nominal = (
-            (config.retirement_expenses if is_retired else config.expenses)
-            * (cpi_now / 100.0)
-        )
 
         # 17. Surplus reinvestment
         remaining_savings = available_cash - (expenses_nominal + actual_tax)
@@ -272,86 +226,44 @@ def simulate(config: CalculatorConfig) -> pd.DataFrame:
         re_end_value = sum(re_values.values())
         trust_end_value = sum(p.units * trust_price for p in trust_parcels)
         total_assets = nre_end_value + re_end_value + super_balance + trust_end_value + cash_balance
-
         total_liabilities = sum(re_mortgage_balance.values()) if re_mortgage_balance else 0.0
         net_worth_nominal = total_assets - total_liabilities
-
-        super_draw = (
-            super_min_draw
-            + draw_state.super_pension_draw
-            + draw_state.super_accumulation_draw
-        )
+        super_draw = super_min_draw + draw_state.super_pension_draw + draw_state.super_accumulation_draw
         trust_active_cap_gain = (
             (trust_result.cgt_gain_dist * 0.5 if year < INDEXATION_START_YEAR else trust_result.cgt_gain_dist)
-            + draw_state.trust_gain_total
-            + trust_diss.dissolution_gain
+            + draw_state.trust_gain_total + trust_diss.dissolution_gain
         )
         trust_diss_tax_final = max(0.0, trust_diss.dissolution_tax - trust_diss.dissolution_gain * 0.30)
         trust_sales_tax = max(0.0, draw_state.trust_cgt_total - draw_state.trust_gain_total * 0.30)
 
-        records.append({
-            "year": year,
-            "age": age,
-            "salary_nominal": salary_nominal,
-            "nre_ordinary_income_nominal": nre_result.nre_ordinary_income,
-            "net_rent_nominal": re_result.net_rent_legacy + re_result.net_rent_new,
-            "nre_capital_gain_nominal": draw_state.nre_gain_total + nre_result.nre_capital_gain_dist,
-            "re_cgt_gain_nominal": sum(g for g, _ in re_sales.re_cgt_events),
-            "total_taxable_income_nominal": total_taxable,
-            "salary_real": salary_nominal * deflator,
-            "nre_ordinary_income_real": nre_result.nre_ordinary_income * deflator,
-            "net_rent_real": (re_result.net_rent_legacy + re_result.net_rent_new) * deflator,
-            "expenses_nominal": expenses_nominal,
-            "expenses_real": expenses_nominal * deflator,
-            "personal_income_tax": personal_tax,
-            "super_fund_tax": super_tax,
-            "div293_tax": div293,
-            "cgt_total": (
-                draw_state.nre_cgt_total
-                + sum(t for _, t in re_sales.re_cgt_events)
-                + trust_sales_tax
-                + trust_diss_tax_final
-            ),
-            "total_tax": actual_tax + super_tax,
-            "nre_drawdown": draw_state.nre_drawdown,
-            "super_drawdown": super_draw,
-            "trust_drawdown": draw_state.trust_drawdown,
-            "super_contribution_concessional": total_concessional,
-            "super_balance_eoy": super_balance,
-            "super_accumulation_balance_eoy": super_acc,
-            "super_pension_balance_eoy": super_pen,
-            "nre_portfolio_value": nre_end_value,
-            "re_portfolio_value": re_end_value,
-            "cash_balance": cash_balance,
-            "total_assets_nominal": total_assets,
-            "nre_portfolio_value_real": nre_end_value * deflator,
-            "re_portfolio_value_real": re_end_value * deflator,
-            "cash_balance_real": cash_balance * deflator,
-            "super_balance_eoy_real": super_balance * deflator,
-            "total_assets_real": total_assets * deflator,
-            "total_liabilities_nominal": total_liabilities,
-            "total_liabilities_real": total_liabilities * deflator,
-            "net_worth_nominal": net_worth_nominal,
-            "net_worth_real": net_worth_nominal * deflator,
-            "trust_distribution_income_nominal": trust_result.distribution_income,
-            "trust_distribution_income_real": trust_result.distribution_income * deflator,
-            "trust_tax_paid_nominal": trust_result.tax_paid,
-            "trust_tax_paid_real": trust_result.tax_paid * deflator,
-            "trust_contribution_nominal": trust_result.contribution_this_year,
-            "nre_contribution_nominal": nre_contrib,
-            "re_contribution_nominal": mortgage.contribution_nominal,
-            "re_mortgage_payment_nominal": mortgage.contribution_nominal,
-            "re_mortgage_interest_nominal": mortgage.interest_nominal,
-            "re_mortgage_principal_nominal": mortgage.principal_nominal,
-            "trust_cgt_gain_nominal": trust_active_cap_gain,
-            "trust_cgt_tax": trust_sales_tax + trust_diss_tax_final,
-            "trust_value_eoy": trust_end_value,
-            "trust_value_eoy_real": trust_end_value * deflator,
-            "cpi_index": cpi_now,
-            "available_cash_pre_draw_debug": available_cash,
-            "remaining_savings_debug": remaining_savings,
-            "funding_gap_debug": draw_state.funding_gap,
-            "initial_funding_gap_debug": draw_state.initial_funding_gap,
-        })
+        rec = _build_year_record(
+            year=year, age=age, deflator=deflator, cpi_now=cpi_now,
+            salary_nominal=salary_nominal, nre_result=nre_result,
+            re_result=re_result, trust_result=trust_result,
+            expenses_nominal=expenses_nominal, actual_tax=actual_tax,
+            personal_tax=personal_tax, div293=div293, super_tax=super_tax,
+            super_balance=super_balance, super_acc=super_acc, super_pen=super_pen,
+            super_min_draw=super_min_draw, super_draw=super_draw,
+            total_taxable=total_taxable, nre_end_value=nre_end_value,
+            re_end_value=re_end_value, trust_end_value=trust_end_value,
+            total_assets=total_assets, total_liabilities=total_liabilities,
+            net_worth_nominal=net_worth_nominal, cash_balance=cash_balance,
+            nre_contrib=nre_contrib, mortgage=mortgage, re_sales=re_sales,
+            trust_diss_gain=trust_diss.dissolution_gain,
+            trust_diss_tax=trust_diss.dissolution_tax,
+            trust_active_cap_gain=trust_active_cap_gain,
+            trust_sales_tax=trust_sales_tax,
+            trust_diss_tax_final=trust_diss_tax_final,
+            draw_nre_drawdown=draw_state.nre_drawdown,
+            draw_nre_gain_total=draw_state.nre_gain_total,
+            draw_nre_cgt_total=draw_state.nre_cgt_total,
+            draw_trust_drawdown=draw_state.trust_drawdown,
+            draw_trust_cgt_total=draw_state.trust_cgt_total,
+            draw_funding_gap=draw_state.funding_gap,
+            draw_initial_funding_gap=draw_state.initial_funding_gap,
+            available_cash=available_cash, remaining_savings=remaining_savings,
+        )
+        rec["super_contribution_concessional"] = total_concessional
+        records.append(rec)
 
     return pd.DataFrame(records)

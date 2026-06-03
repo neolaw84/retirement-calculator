@@ -52,7 +52,7 @@ Stateless pure functions. No side effects.
 
 | Function | Purpose |
 |---|---|
-| `income_tax(taxable_income, trust_distribution)` | Personal income tax + Medicare levy + LITO + 30% trust credit (Budget 2026) |
+| `income_tax(taxable_income, trust_distribution)` | Personal income tax + Medicare levy + 30% trust credit (Budget 2026) |
 | `marginal_rate(taxable_income)` | Marginal income tax rate at a given income level |
 | `division_293_tax(concessional, income)` | Extra 15% on super contributions for high earners (threshold $250k) |
 | `super_fund_tax(concessional, earnings, in_pension_phase)` | Tax inside the super fund (15% accumulation; 0% pension) |
