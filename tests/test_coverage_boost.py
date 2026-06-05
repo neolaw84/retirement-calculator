@@ -173,9 +173,9 @@ def test_negative_gearing_ringfencing():
         seed=42
     )
     df = simulate(config)
-    # Check if total_taxable_income ignores the -19k loss because it's ring-fenced
-    # salary 100k. Taxable should be 100k (plus maybe dividends, but none here)
-    row = df.iloc[0]
+    # Per D15: year_bought=2027 → ring-fenced from simulation year 2028 onwards.
+    # In year 2027 (iloc[0]) the loss IS deductible. In year 2028 (iloc[1]) it is not.
+    row = df.iloc[1]  # year 2028 – ring-fencing applies
     assert row["total_taxable_income_nominal"] >= 100000
 
 from retirement_calculator.rates import NormalRate, HistoricalRate

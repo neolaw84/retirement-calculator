@@ -116,7 +116,7 @@ results_df = simulate(cfg)
 - Simulator main loop: [src/retirement_calculator/simulation/__init__.py](src/retirement_calculator/simulation/__init__.py)
 - Config dataclass: `CalculatorConfig` in the same module.
 - Asset & input models: [src/retirement_calculator/models/__init__.py](src/retirement_calculator/models/__init__.py)
-- Tax primitives (income tax, LITO, Div293, medicare): [src/retirement_calculator/tax/__init__.py](src/retirement_calculator/tax/__init__.py)
+- Tax primitives (income tax, Medicare, Div293, trust credit): [src/retirement_calculator/tax/__init__.py](src/retirement_calculator/tax/__init__.py)
 - CGT rules and `cgt_on_parcel`: [src/retirement_calculator/tax/cgt.py](src/retirement_calculator/tax/cgt.py)
 - Drawdown strategies: [src/retirement_calculator/strategies/__init__.py](src/retirement_calculator/strategies/__init__.py)
 
@@ -237,10 +237,9 @@ The loop converges because each iteration adds realized gains / CGT and the `fun
 
 - `income_tax(taxable_income, trust_distribution)`:
   - `gross = _gross_income_tax(taxable_income)` (bracket lookup)
-  - `lito = _lito(taxable_income)`
   - `medicare = taxable_income * MEDICARE_LEVY_RATE` (2%)
   - `trust_credit = min(trust_distribution * TRUST_MIN_CREDIT_RATE, gross)` (30% credit capped at gross tax)
-  - `net_tax = max(0, gross - lito - trust_credit) + medicare`
+  - `net_tax = max(0, gross - trust_credit) + medicare`
 
 - `division_293_tax(concessional_contributions, income)`:
   - `total = income + concessional_contributions`

@@ -60,6 +60,12 @@ The script configures:
 pytest
 ```
 
+### Run engineering guardrails
+
+```bash
+python scripts/check_size_guardrails.py
+```
+
 ### Build documentation locally
 
 ```bash

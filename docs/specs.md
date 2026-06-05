@@ -58,3 +58,28 @@ Assume Australian Federal Income tax with May 12, 2026 Budget's Tax changes:
 * **valuation at 2027, July 1st**: Reference cost-base for the 2026 Budget CGT regime.
 * **rent income**: Net of expenses.
 * **growth rate**: Rate function.
+
+---
+
+## Delivery Contract for Code Changes (Spec-driven + TDD)
+
+Every behaviour change must follow this sequence:
+
+1. **Spec first**: update this file (`docs/specs.md`) with the behaviour, inputs, outputs, and acceptance criteria.
+2. **Test first**: add/update a failing test in `tests/` that demonstrates the expected behaviour.
+3. **Implementation**: make the minimum code change required to pass tests.
+4. **Refactor**: improve structure without changing semantics.
+
+### Definition of Done for behavioural changes
+
+- Spec section updated and unambiguous.
+- Relevant tests added/updated and passing.
+- If assumptions changed: `docs/assumptions.md` updated.
+- If design decisions/exceptions were made: `docs/decisions_made.md` updated.
+
+### Size and SOLID guardrails
+
+- Function guideline: **40–60 lines**.
+- Module guideline: **200–300 lines**.
+- Exceptions are allowed only with clear rationale and must be documented in `docs/decisions_made.md`.
+- Automated CI guardrail: `scripts/check_size_guardrails.py` prevents new unapproved size exceptions and prevents growth of existing exceptions.

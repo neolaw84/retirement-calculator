@@ -41,21 +41,16 @@ def test_full_scenario_re_ringfencing():
     )
     df = simulate(config)
     
-    # 2027:
-    # Prop 1 (legacy) Loss = 50k (interest) + 1% expenses (10k) = 60k loss.
-    # Prop 2 (new) Loss = 50k + 10k = 60k loss.
-    # Total RE net = -120k.
-    # Ring-fencing: only -60k (legacy) can offset salary.
-    # Assessable RE income = -60k.
-    # Total Taxable = 200k - 60k = 140k.
-    # In practice, total_taxable might be slightly different if some minor
-    # NRE income or similar exists from defaults. 
+    # Per D15: year_bought=2027 → ring-fenced from simulation year 2028 onwards.
+    # In 2027: both props go to the legacy bucket (ring-fence not yet active).
+    # In 2028:
+    #   Prop 1 (legacy) Loss = 50k (interest) + 10k (1% of 1M) = 60k loss → deductible.
+    #   Prop 2 (ring-fenced from 2028) Loss = 60k → ring-fenced.
+    #   Assessable RE income = -60k (legacy only).
+    #   Total Taxable = 200k - 60k = 140k.
     
-    row_2027 = df[df["year"] == 2027].iloc[0]
-    # Check taxable income nominal
-    # Expected: 200000 (salary) - 60000 (legacy loss) = 140000.
-    # Tolerance increased for default NRE/Trust effects if any.
-    assert abs(row_2027["total_taxable_income_nominal"] - 140000.0) < 5000.0
+    row_2028 = df[df["year"] == 2028].iloc[0]
+    assert abs(row_2028["total_taxable_income_nominal"] - 140000.0) < 5000.0
 
 def test_trust_min_credit_v2():
     # Scenario: 100k salary, 50k trust distribution.
